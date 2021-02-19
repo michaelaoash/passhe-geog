@@ -1,0 +1,428 @@
+> pdf(file="passhe.pdf",paper="USr",height=0, width=0)
+> library(tidyverse)
+── Attaching packages ─────────────────────────────────────── tidyverse 1.3.0 ──
+✔ ggplot2 3.3.2     ✔ purrr   0.3.4
+✔ tibble  3.0.3     ✔ dplyr   1.0.2
+✔ tidyr   1.1.0     ✔ stringr 1.4.0
+✔ readr   1.3.1     ✔ forcats 0.5.0
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+> library(readxl)
+> library(foreign)
+> library(ggplot2)
+> library(sp)
+> library(rgdal)
+rgdal: version: 1.5-12, (SVN revision 1018)
+Geospatial Data Abstraction Library extensions to R successfully loaded
+Loaded GDAL runtime: GDAL 3.1.3, released 2020/09/01
+Path to GDAL shared files: /usr/share/gdal
+GDAL binary built with GEOS: TRUE 
+Loaded PROJ runtime: Rel. 7.1.0, August 1st, 2020, [PJ_VERSION: 710]
+Path to PROJ shared files: /home/mash/.local/share/proj:/usr/share/proj
+PROJ CDN enabled:FALSE
+Linking to sp version:1.4-2
+To mute warnings of possible GDAL/OSR exportToProj4() degradation,
+use options("rgdal_show_exportToProj4_warnings"="none") before loading rgdal.
+> ## library(rgeos)
+> library(gpclib)
+General Polygon Clipper Library for R (version 1.5-6)
+	Type 'class ? gpc.poly' for help
+> library(maptools)
+Checking rgeos availability: FALSE
+ 	Note: when rgeos is not available, polygon geometry 	computations in maptools depend on gpclib,
+ 	which has a restricted licence. It is disabled by default;
+ 	to enable gpclib, type gpclibPermit()
+> gpclibPermit()
+[1] TRUE
+Warning message:
+In gpclibPermit() :
+  support for gpclib will be withdrawn from maptools at the next major release
+> library(scales)
+
+Attaching package: ‘scales’
+
+The following object is masked from ‘package:purrr’:
+
+    discard
+
+The following object is masked from ‘package:readr’:
+
+    col_factor
+
+> library(dplyr)
+> library(stringi)  ## for padding numeric
+> library(gtools) ## for smartbind
+> options(scipen=10000,width=200,tibble.print_max=40)
+> 
+> 
+> 
+> ## the location data for the PASSHE universities
+> ipeds  <- readRDS("ipeds-passhe.RData")
+> ipeds  <- ipeds %>% rename(STUSAB=STATE)
+> ipeds  <- ipeds %>% mutate(name=gsub(" of P.*","",NAME))
+> 
+> (nms <- names(read_excel("cz00_eqv_v1.xls", sheet=1, n_max = 0)))
+[1] "FIPS"                           "Commuting Zone ID, 2000"        "Commuting Zone ID, 1990"        "Commuting Zone ID, 1980"        "County Name"                   
+[6] "Metropolitan Area, 2003"        "County Population 2000"         "Commuting Zone Population 2000"
+> (ct <- ifelse(grepl("Population", nms), "guess", "text"))
+[1] "text"  "text"  "text"  "text"  "text"  "text"  "guess" "guess"
+> cz <- read_excel("cz00_eqv_v1.xls", sheet=1, col_types = ct )
+> cz  <- cz %>% mutate(STATE = substr(FIPS,1,2),
++                      COUNTY = substr(FIPS,3,5),
++                      county = paste(FIPS, `County Name`))
+> 
+> czpa  <- cz %>% filter(STATE=="42")
+> 
+> passhe  <- left_join(x=ipeds, y=czpa, by=c("CNTY"="FIPS") )
+> 
+> ## Find the list of all counties in a commuting zone with a university
+> temp  <- left_join(x=passhe, y=czpa, by="Commuting Zone ID, 2000", suffix=c(".x",""))
+> temp %>% group_by(county) %>% summarize(CZ=first(`Commuting Zone ID, 2000`), passhe=paste(name, collapse=", ")) %>% arrange(county)
+`summarise()` ungrouping output (override with `.groups` argument)
+# A tibble: 51 x 3
+   county                 CZ    passhe                                          
+   <chr>                  <chr> <chr>                                           
+ 1 42001 Adams County     251   Millersville University, Shippensburg University
+ 2 42003 Allegheny County 203   California University, Slippery Rock University 
+ 3 42005 Armstrong County 203   California University, Slippery Rock University 
+ 4 42007 Beaver County    203   California University, Slippery Rock University 
+ 5 42009 Bedford County   420   Indiana University                              
+ 6 42011 Berks County     231   Kutztown University                             
+ 7 42013 Blair County     420   Indiana University                              
+ 8 42015 Bradford County  358   Lock Haven University                           
+ 9 42017 Bucks County     316   Cheyney University, West Chester University     
+10 42019 Butler County    203   California University, Slippery Rock University 
+# … with 41 more rows
+> ## Find the list of Commuting zones with the universities and counties attached.
+> temp %>% group_by(CZ=`Commuting Zone ID, 2000`) %>% summarize(passhe=paste(unique(name), collapse=", "), county=paste(unique(county), collapse=", "))
+`summarise()` ungrouping output (override with `.groups` argument)
+# A tibble: 10 x 3
+   CZ    passhe                                       county                                                                                                                                            
+   <chr> <chr>                                        <chr>                                                                                                                                             
+ 1 113   Bloomsburg University                        42037 Columbia County, 42093 Montour County, 42097 Northumberland County, 42109 Snyder County, 42119 Union County                                 
+ 2 203   California University, Slippery Rock Univer… 42003 Allegheny County, 42005 Armstrong County, 42007 Beaver County, 42019 Butler County, 42051 Fayette County, 42125 Washington County, 42129 We…
+ 3 215   Clarion University, Edinboro University      42031 Clarion County, 42039 Crawford County, 42049 Erie County, 42053 Forest County, 42121 Venango County, 42123 Warren County                    
+ 4 231   Kutztown University                          42011 Berks County, 42025 Carbon County, 42077 Lehigh County, 42095 Northampton County, 42107 Schuylkill County                                   
+ 5 251   Millersville University, Shippensburg Unive… 42001 Adams County, 42041 Cumberland County, 42043 Dauphin County, 42071 Lancaster County, 42075 Lebanon County, 42099 Perry County, 42133 York C…
+ 6 309   East Stroudsburg University                  42069 Lackawanna County, 42079 Luzerne County, 42089 Monroe County, 42103 Pike County, 42127 Wayne County, 42131 Wyoming County                   
+ 7 316   Cheyney University, West Chester University  42017 Bucks County, 42029 Chester County, 42045 Delaware County, 42091 Montgomery County, 42101 Philadelphia County                               
+ 8 358   Lock Haven University                        42015 Bradford County, 42035 Clinton County, 42081 Lycoming County, 42113 Sullivan County                                                         
+ 9 420   Indiana University                           42009 Bedford County, 42013 Blair County, 42021 Cambria County, 42063 Indiana County, 42111 Somerset County                                       
+10 431   Mansfield University                         42117 Tioga County                                                                                                                                
+> 
+> 
+> 
+> ## Employee counts from the PASSHE Data Workbook
+> wsMap  <- read_csv("wsMap-density/wsMap-density.csv")
+Parsed with column specification:
+cols(
+  .default = col_logical(),
+  `Geo Name2` = col_character(),
+  `Measure for Color` = col_double(),
+  `TT LHS Measure when Density Selected` = col_character(),
+  `TT LHS Population when Density Selected` = col_character(),
+  `TT Selected Measure, Mode, Univ` = col_character(),
+  Geometry = col_character(),
+  `Latitude (generated)` = col_double(),
+  `Longitude (generated)` = col_double(),
+  `TT Measure Count when Density Selected` = col_number(),
+  `TT Measure Density when Density Selected` = col_character(),
+  `TT Population Number when Density Selected` = col_number()
+)
+See spec(...) for full column specifications.
+> ## wsMap  <- read_csv("wsMap-density.csv")
+> wsMap %>% filter(`Measure for Color` > 0.8) %>% 
++     select(`Geo Name2`,`TT Selected Measure, Mode, Univ`, `TT Measure Count when Density Selected`,`Measure for Color`)
+# A tibble: 8 x 4
+  `Geo Name2`     `TT Selected Measure, Mode, Univ`      `TT Measure Count when Density Selected` `Measure for Color`
+  <chr>           <chr>                                                                     <dbl>               <dbl>
+1 Columbia County Bloomsburg University Employee Density                                      707               1.05 
+2 Clarion County  Clarion University Employee Density                                         431               1.08 
+3 Indiana County  Indiana University Employee Density                                        1077               1.21 
+4 Clinton County  Lock Haven University Employee Density                                      315               0.803
+5 Indiana County  State System Employee Density                                              1089               1.23 
+6 Columbia County State System Employee Density                                               713               1.06 
+7 Clinton County  State System Employee Density                                               319               0.813
+8 Clarion County  State System Employee Density                                               441               1.10 
+> test  <- wsMap %>% filter(!(`TT Selected Measure, Mode, Univ` %in% c("State System Employee Density","Office of the Chancellor Employee Density") )) %>%
++     group_by(`TT Selected Measure, Mode, Univ`) %>%
++     transmute(
++         County = `Geo Name2`,
++         university = gsub(" Employee Density", "",`TT Selected Measure, Mode, Univ`),
++         count = `TT Measure Count when Density Selected`,
++         density = `Measure for Color`/100,
++         share = count / sum(count)
++     )
+> test  <- test %>% arrange(university, desc(share)) %>% mutate(runshare = cumsum(share))
+> pt1  <- test %>% filter(runshare<0.8)
+> pt2  <- test %>% filter(runshare>=0.8) %>% filter(row_number()==1)
+> eightypercent  <- bind_rows(pt1,pt2) %>% arrange(university, desc(share))
+> twentyemployees  <- test %>% filter(count>=20)
+> criterion  <- eightypercent
+> 
+> (university.counties <- criterion %>% group_by(university) %>% summarize(`Counties accounting for 80% of Employment` = paste(County,collapse=", ") ))
+`summarise()` ungrouping output (override with `.groups` argument)
+# A tibble: 14 x 2
+   university                  `Counties accounting for 80% of Employment`                           
+   <chr>                       <chr>                                                                 
+ 1 Bloomsburg University       Columbia County, Luzerne County, Montour County, Northumberland County
+ 2 California University       Washington County, Allegheny County, Fayette County                   
+ 3 Cheyney University          Delaware County, Philadelphia County, Chester County                  
+ 4 Clarion University          Clarion County, Venango County, Jefferson County, Allegheny County    
+ 5 East Stroudsburg University Monroe County, Northampton County                                     
+ 6 Edinboro University         Erie County, Crawford County                                          
+ 7 Indiana University          Indiana County, Westmoreland County, Allegheny County                 
+ 8 Kutztown University         Berks County, Lehigh County, Northampton County                       
+ 9 Lock Haven University       Clinton County, Centre County, Lycoming County                        
+10 Mansfield University        Tioga County, Bradford County                                         
+11 Millersville University     Lancaster County                                                      
+12 Shippensburg University     Cumberland County, Franklin County, Adams County                      
+13 Slippery Rock University    Butler County, Mercer County, Allegheny County                        
+14 West Chester University     Chester County, Delaware County, Montgomery County                    
+> (county.universities <- criterion %>% group_by(County) %>% summarize(`Universities associated with County` = paste(university,collapse=", ") ))
+`summarise()` ungrouping output (override with `.groups` argument)
+# A tibble: 33 x 2
+   County                `Universities associated with County`                                                  
+   <chr>                 <chr>                                                                                  
+ 1 Adams County          Shippensburg University                                                                
+ 2 Allegheny County      California University, Clarion University, Indiana University, Slippery Rock University
+ 3 Berks County          Kutztown University                                                                    
+ 4 Bradford County       Mansfield University                                                                   
+ 5 Butler County         Slippery Rock University                                                               
+ 6 Centre County         Lock Haven University                                                                  
+ 7 Chester County        Cheyney University, West Chester University                                            
+ 8 Clarion County        Clarion University                                                                     
+ 9 Clinton County        Lock Haven University                                                                  
+10 Columbia County       Bloomsburg University                                                                  
+11 Crawford County       Edinboro University                                                                    
+12 Cumberland County     Shippensburg University                                                                
+13 Delaware County       Cheyney University, West Chester University                                            
+14 Erie County           Edinboro University                                                                    
+15 Fayette County        California University                                                                  
+16 Franklin County       Shippensburg University                                                                
+17 Indiana County        Indiana University                                                                     
+18 Jefferson County      Clarion University                                                                     
+19 Lancaster County      Millersville University                                                                
+20 Lehigh County         Kutztown University                                                                    
+21 Luzerne County        Bloomsburg University                                                                  
+22 Lycoming County       Lock Haven University                                                                  
+23 Mercer County         Slippery Rock University                                                               
+24 Monroe County         East Stroudsburg University                                                            
+25 Montgomery County     West Chester University                                                                
+26 Montour County        Bloomsburg University                                                                  
+27 Northampton County    East Stroudsburg University, Kutztown University                                       
+28 Northumberland County Bloomsburg University                                                                  
+29 Philadelphia County   Cheyney University                                                                     
+30 Tioga County          Mansfield University                                                                   
+31 Venango County        Clarion University                                                                     
+32 Washington County     California University                                                                  
+33 Westmoreland County   Indiana University                                                                     
+> 
+> 
+> 
+> 
+> ## create a layer name for the shapefile (filename before .shp/.shx/.dbf extension)
+> layerName <- "co42_d00"
+> 
+> ## read data into a SpatialPolygonsDataFrame object
+> paCounties.spdf <- readOGR(dsn="/home/mash/Desktop/pa-apscuf-krc/geog/co42_d00_shp/", layer=layerName)
+OGR data source with driver: ESRI Shapefile 
+Source: "/home/mash/Desktop/pa-apscuf-krc/geog/co42_d00_shp", layer: "co42_d00"
+with 68 features
+It has 9 fields
+Integer64 fields read as strings:  CO42_D00_ CO42_D00_I 
+> 
+> ## add to the database portion of the spdf object
+> ## a new column termed "id" composed of the rownames of data
+> ## two new columns for latitude and longitude of centroid ("internal point")
+> paCounties.spdf@data$id <- rownames(paCounties.spdf@data)
+> paCounties.spdf@data$intptlon <- coordinates(paCounties.spdf)[,1]
+> paCounties.spdf@data$intptlat <- coordinates(paCounties.spdf)[,2]
+> 
+> paCounties.spdf@data <- left_join(paCounties.spdf@data, cz, by=c("STATE"="STATE","COUNTY"="COUNTY"))
+> 
+> paCounties.spdf@data <- left_join(paCounties.spdf@data, county.universities, by=c("County Name"="County"))
+> 
+> paCounties.spdf@data <- mutate(paCounties.spdf@data,
++                                       `Bloomsburg University` = ifelse(grepl("Bloomsburg University", `Universities associated with County`), "maroon", NA),
++                                       `California University` = ifelse(grepl("California University", `Universities associated with County`), "red", NA),
++                                          `Cheyney University` = ifelse(grepl("Cheyney University", `Universities associated with County`), "royalblue", NA),
++                                          `Clarion University` = ifelse(grepl("Clarion University", `Universities associated with County`), "blue", NA),
++                                 `East Stroudsburg University` = ifelse(grepl("East Stroudsburg University", `Universities associated with County`), "red", NA),
++                                         `Edinboro University` = ifelse(grepl("Edinboro University", `Universities associated with County`), "red", NA),
++                                          `Indiana University` = ifelse(grepl("Indiana University", `Universities associated with County`), "darkgray", NA),
++                                         `Kutztown University` = ifelse(grepl("Kutztown University", `Universities associated with County`), "maroon", NA),
++                                       `Lock Haven University` = ifelse(grepl("Lock Haven University", `Universities associated with County`), "red", NA),
++                                        `Mansfield University` = ifelse(grepl("Mansfield University", `Universities associated with County`), "darkgray", NA),
++                                     `Millersville University` = ifelse(grepl("Millersville University", `Universities associated with County`), "gold", NA),
++                                     `Shippensburg University` = ifelse(grepl("Shippensburg University", `Universities associated with County`), "blue", NA),
++                                    `Slippery Rock University` = ifelse(grepl("Slippery Rock University", `Universities associated with County`), "green", NA),
++                                     `West Chester University` = ifelse(grepl("West Chester University", `Universities associated with County`), "purple", NA),
++                                )
+> 
+> ## create a data.frame from the spatial object
+> paCounties.df <- fortify(paCounties.spdf, region = "id")
+> 
+> ## merge the "fortified" geographic data with the database portion of the spatial object
+> paCounties.df <- merge(paCounties.df, paCounties.spdf@data, by = "id")
+> 
+> paCounties.df  <- paCounties.df[order(paCounties.df$order),]
+> 
+> 
+> 
+> ## ggplot Counties and Commuting Zones and place the universities
+> paCounties.gg <- ggplot(data = paCounties.df, aes(x=long, y=lat)) +
++     geom_polygon(aes(group = COUNTY, fill=`Commuting Zone ID, 2000`),color="gray") +
++     geom_text(data=paCounties.spdf@data, aes(x=intptlon, y=intptlat,label=NAME), color="gray") +
++     geom_point(data=passhe, aes(x=LON,y=LAT), show.legend=FALSE) +
++     geom_text(data=passhe, aes(x=LON,y=LAT,label=name), hjust="left", nudge_x=0.02) +
++     theme(legend.position="none")
+> 
+> ## paCounties.gg <- ggplot(data = paCounties.df,
+> ##                        aes(x=long, y=lat, group = COUNTY, fill=as.numeric(margin))) + geom_polygon() +
+> ##                            geom_path(aes(color = as.numeric(Delegates))) +
+> ##                                scale_fill_gradient2(midpoint=0, low=muted("red"), mid="white", high=muted("blue"), space ="Lab", name="Margin") +
+> ##                                    scale_color_gradient2(midpoint=0.5, low="white", mid="gray", high="black", space ="Lab", name="Delegates (border)", guide="none") +
+> ##                                        coord_equal()  + theme(legend.position = "bottom", axis.title = element_blank(),axis.text = element_blank()) +
+> ##                                            geom_text(data=paCounties.spdf@data,aes(x=as.numeric(intptlon),y=as.numeric(intptlat),group=NULL,label=ALTNAME),size=1.2) 
+>                                                ## geom_text(data=junk,aes(x=as.numeric(intptlon),y=as.numeric(intptlat),group=NULL,label=ALTNAME),size=1.2) +
+>                                                ##     annotate(geom="text", label="Retirees and Higher Ed Units", x=-73.1,y=41.9,size=2)
+> 
+> ##  Print with alternative projections
+> print(paCounties.gg + coord_map("conic", lat0 = 30))
+> 
+> 
+> ## ggplot Counties and University Clusters and place the universities
+> paCounties.gg <- ggplot(data = paCounties.df, aes(x=long, y=lat)) +
++     geom_polygon(aes(group = COUNTY, fill=NA),color="gray") +
++     geom_polygon(aes(group = COUNTY, fill=`Bloomsburg University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`California University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`Cheyney University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`Clarion University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`East Stroudsburg University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`Edinboro University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`Indiana University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`Kutztown University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`Lock Haven University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`Mansfield University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`Millersville University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`Shippensburg University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`Slippery Rock University`),color="gray", alpha=0.5) +
++     geom_polygon(aes(group = COUNTY, fill=`West Chester University`),color="gray", alpha=0.5) +
++     scale_fill_identity() +
++     geom_text(data=paCounties.spdf@data, aes(x=intptlon, y=intptlat,label=NAME), color="gray") +
++     geom_point(data=passhe, aes(x=LON,y=LAT), show.legend=FALSE) +
++     geom_text(data=passhe, aes(x=LON,y=LAT,label=name), hjust="left", nudge_x=0.02) +
++     theme(legend.position="none")
+> print(paCounties.gg + coord_map("conic", lat0 = 30))
+> 
+> 
+> ## ggplot Counties and One University Cluster and place the university
+> for (univ in c("`Bloomsburg University`","`California University`","`Cheyney University`","`Clarion University`","`East Stroudsburg University`","`Edinboro University`","`Indiana University`","`Kutztown University`","`Lock Haven University`","`Mansfield University`","`Millersville University`","`Shippensburg University`","`Slippery Rock University`","`West Chester University`")) {
++     univ_name  <- gsub("`","",univ)
++ paCounties.gg <- ggplot(data = paCounties.df, aes(x=long, y=lat)) +
++     geom_polygon(aes(group = COUNTY, fill=eval(parse(text=univ))),color="gray") +
++     scale_fill_identity() +
++     geom_text(data=paCounties.spdf@data, aes(x=intptlon, y=intptlat,label=NAME), color="gray") +
++     geom_point(data=filter(passhe,name==univ_name), aes(x=LON,y=LAT), show.legend=FALSE) +
++     geom_text(data=filter(passhe,name==univ_name), aes(x=LON,y=LAT,label=name), hjust="left", nudge_x=0.02) +
++     theme(legend.position="none")
++ print(paCounties.gg + coord_map("conic", lat0 = 30))
++ }
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> ## State Legislative Districts Upper (Senate)
+> ## create a layer name for the shapefile (filename before .shp/.shx/.dbf extension)
+> layerName <- "cb_2018_42_sldu_500k"
+> 
+> ## read data into a SpatialPolygonsDataFrame object
+> paSLDU.spdf <- readOGR(dsn="/home/mash/Desktop/pa-apscuf-krc/geog/cb_2018_42_sldu_500k/", layer=layerName)
+OGR data source with driver: ESRI Shapefile 
+Source: "/home/mash/Desktop/pa-apscuf-krc/geog/cb_2018_42_sldu_500k", layer: "cb_2018_42_sldu_500k"
+with 50 features
+It has 9 fields
+Integer64 fields read as strings:  ALAND AWATER 
+> 
+> ## add to the database portion of the spdf object
+> ## a new column termed "id" composed of the rownames of data
+> ## two new columns for latitude and longitude of centroid ("internal point")
+> paSLDU.spdf@data$id <- rownames(paSLDU.spdf@data)
+> paSLDU.spdf@data$intptlon <- coordinates(paSLDU.spdf)[,1]
+> paSLDU.spdf@data$intptlat <- coordinates(paSLDU.spdf)[,2]
+> 
+> ## create a data.frame from the spatial object
+> paSLDU.df <- fortify(paSLDU.spdf, region = "id")
+Warning message:
+In proj4string(SpP) : CRS object has comment, which is lost in output
+> 
+> ## merge the "fortified" geographic data with the database portion of the spatial object
+> paSLDU.df <- merge(paSLDU.df, paSLDU.spdf@data, by = "id")
+> 
+> paSLDU.df  <- paSLDU.df[order(paSLDU.df$order),]
+> 
+> 
+> ## ggplot and place the universities
+> paSLDU.gg <- ggplot(data = paSLDU.df, aes(x=long, y=lat)) +
++     geom_polygon(aes(group = NAME, fill=`NAME`),color="gray") +
++     geom_text(data=paSLDU.spdf@data, aes(x=intptlon, y=intptlat, label=NAME), color="gray") +
++     geom_point(data=passhe, aes(x=LON,y=LAT), show.legend=FALSE) +
++     geom_text(data=passhe, aes(x=LON,y=LAT,label=name), hjust="left", nudge_x=0.02) +
++ ##    scale_fill_viridis_d() +
++     theme(legend.position="none")
+> 
+> print(paSLDU.gg + coord_map("conic", lat0 = 30))
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> ## ## US Congressional Districts
+> ## ## create a layer name for the shapefile (filename before .shp/.shx/.dbf extension)
+> ## layerName <- "cb_2018_us_cd116_20m"
+> 
+> ## ## read data into a SpatialPolygonsDataFrame object
+> ## paCD.spdf <- readOGR(dsn="/home/mash/Desktop/pa-apscuf-krc/geog/cb_2018_us_cd116_20m/", layer=layerName)
+> 
+> ## ## add to the database portion of the spdf object
+> ## ## a new column termed "id" composed of the rownames of data
+> ## ## two new columns for latitude and longitude of centroid ("internal point")
+> ## paCD.spdf@data$id <- rownames(paCD.spdf@data)
+> ## paCD.spdf@data$intptlon <- coordinates(paCD.spdf)[,1]
+> ## paCD.spdf@data$intptlat <- coordinates(paCD.spdf)[,2]
+> 
+> ## ## create a data.frame from the spatial object
+> ## paCD.df <- fortify(paCD.spdf, region = "id")
+> 
+> ## ## merge the "fortified" geographic data with the database portion of the spatial object
+> ## paCD.df <- merge(paCD.df, paCD.spdf@data, by = "id")
+> 
+> ## paCD.df <- paCD.df %>% filter(STATEFP==42)
+> 
+> ## paCD.df  <- paCD.df[order(paCD.df$order),]
+> 
+> 
+> 
+> ## ## ggplot and place the universities
+> ## paCD.gg <- ggplot(data = paCD.df, aes(x=long, y=lat)) +
+> ##     geom_polygon(aes(group=CD116FP, fill=CD116FP),color="gray") +
+> ##     geom_text(data=filter(paCD.spdf@data,STATEFP=="42"), aes(x=intptlon, y=intptlat, label=CD116FP), color="gray") +
+> ##     geom_point(data=passhe, aes(x=LON,y=LAT)) +
+> ##     geom_text(data=passhe, aes(x=LON,y=LAT,label=name), hjust="left", nudge_x=0.02) +
+> ## ##    scale_fill_viridis_d() +
+> ##     theme(legend.position="none")
+> 
+> ## print(paCD.gg + coord_map("conic", lat0 = 30))
+> 
+> proc.time()
+   user  system elapsed 
+ 11.296   0.168  11.490 
